@@ -1,0 +1,2 @@
+class OrtecError(RuntimeError):
+    pass
