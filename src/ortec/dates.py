@@ -13,6 +13,10 @@ def today() -> dt.date:
     return dt.datetime.now(TZ).date()
 
 
+def tomorrow() -> dt.date:
+    return today() + dt.timedelta(days=1)
+
+
 def parse_date(value: str, *, now: dt.date | None = None) -> dt.date:
     """`YYYY-MM-DD`, `MM-DD`, `DD`, `today`/`vandaag`, `tomorrow`/`morgen` or `+N`.
     A short date is the next such date, today included."""
@@ -74,9 +78,12 @@ def local(iso: str) -> dt.datetime:
     return dt.datetime.fromisoformat(iso).astimezone(TZ)
 
 
-def span(start: str | None, end: str | None, days: int) -> tuple[dt.date, dt.date]:
-    """No dates: the next `days` days. One date: that day."""
+def span(start: str | None, end: str | None, days: int, *,
+         first: dt.date | None = None) -> tuple[dt.date, dt.date]:
+    """No dates: `first` (today by default) and the `days` days after it. One
+    date: that day."""
     if start is None:
-        return today(), today() + dt.timedelta(days=days)
+        first = first or today()
+        return first, first + dt.timedelta(days=days)
     first = parse_date(start)
     return first, parse_date(end) if end else first

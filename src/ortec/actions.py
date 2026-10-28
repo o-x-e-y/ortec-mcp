@@ -175,8 +175,9 @@ def working_with(s: Session, start: dt.date, end: dt.date | None = None, *,
     incomplete.
     """
     end = end or start
-    if start < dates.today():
-        raise OrtecError("working-with only looks at today and later")
+    if start <= dates.today():
+        raise OrtecError("working-with only looks at tomorrow and later: from midnight "
+                         "a day's shifts are realised and can no longer be swapped")
     mine = shifts(s, start, end)
     if not mine:
         raise OrtecError(f"you have no shift on {render.span(start, end)}; "

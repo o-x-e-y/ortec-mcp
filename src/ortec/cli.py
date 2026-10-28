@@ -27,7 +27,7 @@ examples:
   ortec swap-request 2026-10-28 tess --their-date 2026-10-30
   ortec swap-request 2026-10-28 12345678 --give-away -m "kan niet"
   ortec swap-accept 2026-10-28                  the open incoming request that day
-  ortec working-with                            who works with you, next 7 days
+  ortec working-with                            who works with you, 7 days from tomorrow
   ortec working-with 28                         ... on the 28th (only days you work)
   ortec leave 2026-11-10                        one whole day
   ortec leave 2026-11-10 2026-11-12             three whole days
@@ -130,7 +130,7 @@ def run(args, session: Session) -> str:
         case "leave-types":
             return render.leave_types(actions.leave_types(session))
         case "working-with":
-            start, end = dates.span(args.start, args.end, args.days)
+            start, end = dates.span(args.start, args.end, args.days, first=dates.tomorrow())
             found = actions.working_with(session, start, end)
             if args.previous:
                 found = actions.carry_over(found, _read_previous(args.previous))

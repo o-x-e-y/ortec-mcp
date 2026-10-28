@@ -171,6 +171,7 @@ def test_spans():
 
     today = dates.today()
     assert dates.span(None, None, 13) == (today, today + dt.timedelta(days=13))
+    assert dates.span(None, None, 6, first=OCT28) == (OCT28, dt.date(2026, 11, 3))
     assert dates.span("2026-10-28", None, 13) == (OCT28, OCT28)
     assert dates.span("2026-10-28", "2026-10-30", 13) == (OCT28, dt.date(2026, 10, 30))
 
@@ -229,9 +230,11 @@ def test_working_with_refuses_days_off_without_looking(fake, oct27):
     assert not any(c[1].endswith("/swap-candidates") for c in fake.calls)
 
 
-def test_working_with_refuses_the_past(fake, oct27):
-    with pytest.raises(OrtecError, match="today and later"):
-        actions.working_with(fake, dt.date(2026, 10, 26))
+@pytest.mark.parametrize("day", [dt.date(2026, 10, 26), dt.date(2026, 10, 27)])
+def test_working_with_refuses_today_and_the_past(fake, oct27, day):
+    with pytest.raises(OrtecError, match="tomorrow and later"):
+        actions.working_with(fake, day)
+    assert not any(c[1].endswith("/swap-candidates") for c in fake.calls)
 
 
 def test_working_with_lists_colleagues_on_that_day(fake, oct27):
@@ -254,7 +257,7 @@ def test_working_with_a_week_only_visits_work_days_and_pauses(fake, oct27, monke
 
     slept = []
     monkeypatch.setattr(module.time, "sleep", slept.append)
-    found = actions.working_with(fake, dt.date(2026, 10, 27), dt.date(2026, 11, 2))
+    found = actions.working_with(fake, OCT28, dt.date(2026, 11, 2))
     assert [d.day.isoformat() for d in found] == ["2026-10-28", "2026-10-30", "2026-10-31"]
     asked = [c[1] for c in fake.calls if c[1].endswith("/swap-candidates")]
     assert asked == [f"/api/shifts/{i}/swap-candidates" for i in (1001, 1002, 1003, 1004)]

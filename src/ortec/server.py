@@ -132,9 +132,11 @@ def respond_to_swap(date: str | None = None, request_id: int | None = None,
 @tool(READ)
 def working_with(start: str | None = None, end: str | None = None) -> str:
     """Who the user works with, only on days they have a shift. Only `start`: that
-    day. Neither: the next 7 days. Shows the colleagues the swap screen lists for
-    the user's own shift, so it can miss people; refuses days the user is off."""
-    first, last = dates.span(start, end, actions.DEFAULT_DAYS["working-with"])
+    day. Neither: the 7 days from tomorrow. Shows the colleagues the swap screen
+    lists for the user's own shift, so it can miss people; refuses days the user is
+    off, and today, whose shifts can no longer be swapped."""
+    first, last = dates.span(start, end, actions.DEFAULT_DAYS["working-with"],
+                             first=dates.tomorrow())
     return render.working_with(actions.working_with(session(), first, last), first, last)
 
 

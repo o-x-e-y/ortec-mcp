@@ -11,7 +11,7 @@ ortec swap-candidates 2026-10-28          # who can swap my shift that day
 ortec swap-request 2026-10-28 tess        # preview; add --yes to send
 ortec swap-accept 2026-10-28              # preview; add --yes to send
 ortec leave 2026-11-10 2026-11-12         # preview; add --yes to send
-ortec working-with                        # who you work with on your shifts, next 7 days
+ortec working-with                        # who you work with on your shifts, 7 days from tomorrow
 ```
 
 `ortec --help` documents every command.
