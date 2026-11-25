@@ -1,5 +1,5 @@
 {
-  description = "CLI and MCP server for ORTEC Employee Self Service: shifts, swaps and leave";
+  description = "CLI and MCP server for ORTEC Employee Self Service: shifts, swaps, leave and work preferences";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

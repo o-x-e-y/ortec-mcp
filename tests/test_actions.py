@@ -129,6 +129,76 @@ def test_leave_stops_when_the_balance_check_fails():
     assert [c[1] for c in fake.posts()] == ["/api/v2/requests/leaves/check-balance"]
 
 
+def test_leave_cancel_previews_then_deletes(fake):
+    write = actions.cancel_leave(fake, 6001)
+    assert fake.posts() == [] and not write.sent
+    assert write.summary == ["Cancel leave request 6001: Vakantie, Fri 2026-12-25 00:00 – 15:00"]
+    actions.cancel_leave(fake, 6001, confirm=True)
+    assert fake.posts() == [("DELETE", "/api/v2/employees/100/requests/leaves/6001", None)]
+
+
+@pytest.mark.parametrize(("cancel", "wanted", "error"), [
+    (actions.cancel_leave, 6002, "leave request 6002 is Approved"),
+    (actions.cancel_leave, 6999, "no leave request 6999"),
+    (actions.cancel_preference, 7001, "work preference 7001 is Approved"),
+])
+def test_cancel_refuses_what_a_planner_handled(fake, cancel, wanted, error):
+    with pytest.raises(OrtecError, match=error):
+        cancel(fake, wanted, confirm=True)
+    assert fake.posts() == []
+
+
+def test_preference_cancel(fake):
+    write = actions.cancel_preference(fake, 7002, confirm=True)
+    assert write.summary == [("Cancel work preference 7002: Want to work: "
+                             "Fri 2026-11-20 16:00 – 24:00")]
+    assert fake.posts() == [
+        ("DELETE", "/api/v2/employees/100/requests/work-preferences/7002", None)]
+
+
+def test_swap_cancel_only_takes_back_an_open_request_you_sent(fake):
+    write = actions.cancel_swap(fake, OCT28)
+    assert not write.sent and write.summary[0] == "Cancel swap request 5002 to Bob Smit"
+    actions.cancel_swap(fake, OCT28, confirm=True)
+    assert fake.posts() == [("DELETE", "/api/requests/swaps/5002", None)]
+    with pytest.raises(OrtecError, match="no open outgoing swap request on 2026-11-02"):
+        actions.cancel_swap(fake, dt.date(2026, 11, 2), confirm=True)
+
+
+def test_preference_preview_sends_nothing(fake):
+    write = actions.request_work_preference(fake, "2026-12-26 16:00", "00:00", work=False)
+    assert fake.posts() == [] and not write.sent
+    assert write.body == {"employeeId": 100, "type": "Interval",
+                          "fromDateTime": "2026-12-26T16:00:00+01:00",
+                          "toDateTime": "2026-12-27T00:00:00+01:00",
+                          "remarks": "", "isWorkPreference": False}
+    assert write.summary == ["Don't want to work: Sat 2026-12-26 16:00 – 24:00"]
+
+
+def test_preference_sends_with_confirm(fake):
+    write = actions.request_work_preference(fake, "2026-12-25", work=True, remark="kerst",
+                                            confirm=True)
+    assert fake.posts() == [("POST", "/api/v2/requests/work-preferences", {
+        "employeeId": 100, "type": "Interval", "fromDateTime": "2026-12-25T00:00:00+01:00",
+        "toDateTime": "2026-12-26T00:00:00+01:00", "remarks": "kerst",
+        "isWorkPreference": True})]
+    assert write.after == ["Preference 7003 is Pending."]
+
+
+def test_preferences_are_listed_in_order(fake):
+    from ortec import render
+
+    found = actions.work_preferences(fake, dt.date(2026, 11, 1), dt.date(2026, 11, 30))
+    assert fake.calls[-1][2] == {"from": "2026-11-01T00:00:00+01:00",
+                                 "until": "2026-12-01T00:00:00+01:00"}
+    out = render.work_preferences(found, dt.date(2026, 11, 1), dt.date(2026, 11, 30))
+    assert out.splitlines()[2:] == [
+        "- **7001** Don't want to work: Sun 2026-11-01, whole day — Approved",
+        "  - remark: marathon",
+        "- **7002** Want to work: Fri 2026-11-20 16:00 – 24:00 — Pending",
+    ]
+
+
 @pytest.mark.parametrize(("start", "end", "expected"), [
     ("2026-11-10", None,
      ("2026-11-10T00:00:00+01:00", "2026-11-11T00:00:00+01:00", "OneFullDay")),

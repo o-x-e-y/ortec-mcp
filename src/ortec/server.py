@@ -16,14 +16,16 @@ from .errors import OrtecError
 from .session import Session
 
 INSTRUCTIONS = """\
-Shifts, shift swaps and leave (time off) for one employee in ORTEC Employee
+Shifts, shift swaps, leave (time off) and work preferences (werkvoorkeuren:
+when the user does or doesn't want to work) for one employee in ORTEC Employee
 Self Service. Dates are YYYY-MM-DD, `today`, `tomorrow` or `+N` days, in
 Europe/Amsterdam; work out the date yourself for words like "Friday" before
 calling.
 
 Tool output is Markdown written for the user: show it as-is.
 
-request_swap, respond_to_swap and request_leave change the real schedule. Call
+request_swap, respond_to_swap, cancel_swap, request_leave, cancel_leave,
+request_work_preference and cancel_work_preference change the real schedule. Call
 them first without `confirm`: that sends nothing and returns a preview. Show the
 preview to the user and call again with `confirm: true` only after they have
 said yes to that exact preview. Never confirm on your own initiative.
@@ -166,6 +168,65 @@ def request_leave(start: str, end: str | None = None, leave_type: str | None = N
     """
     return render.write(actions.request_leave(
         session(), start, end, leave_type=leave_type, remark=remark, confirm=confirm), CONFIRM_HINT)
+
+
+@tool(WRITE)
+def cancel_leave(leave_id: int, confirm: bool = False) -> str:
+    """Cancel one of the user's pending leave requests, by its id from leave_requests.
+
+    confirm: false returns a preview and sends nothing; true cancels it.
+    """
+    return render.write(actions.cancel_leave(session(), leave_id, confirm=confirm),
+                        CONFIRM_HINT)
+
+
+@tool(READ)
+def work_preferences(start: str | None = None, end: str | None = None) -> str:
+    """The user's work preferences (werkvoorkeuren) and their status, from `start`
+    to `end` inclusive. Only `start`: that day. Neither: the next 90 days."""
+    first, last = dates.span(start, end, actions.DEFAULT_DAYS["preferences"])
+    return render.work_preferences(actions.work_preferences(session(), first, last),
+                                   first, last)
+
+
+@tool(WRITE)
+def request_work_preference(start: str, work: bool, end: str | None = None, remark: str = "",
+                            confirm: bool = False) -> str:
+    """Enter a work preference (werkvoorkeur): a time the user does or does not
+    want to work. This is not leave; use request_leave for time off.
+
+    work: false = "ik wil niet werken", true = "ik wil werken".
+    Whole days: start = first day, end = last day (omit for one day).
+    Part of a day: start = "YYYY-MM-DD HH:MM", end = "HH:MM" ("00:00" = end of that day).
+    confirm: false returns a preview and sends nothing; true sends it.
+    """
+    return render.write(actions.request_work_preference(
+        session(), start, end, work=work, remark=remark, confirm=confirm), CONFIRM_HINT)
+
+
+@tool(WRITE)
+def cancel_work_preference(preference_id: int, confirm: bool = False) -> str:
+    """Cancel one of the user's pending work preferences, by its id from
+    work_preferences.
+
+    confirm: false returns a preview and sends nothing; true cancels it.
+    """
+    return render.write(actions.cancel_preference(session(), preference_id, confirm=confirm),
+                        CONFIRM_HINT)
+
+
+@tool(WRITE)
+def cancel_swap(date: str | None = None, request_id: int | None = None,
+                confirm: bool = False) -> str:
+    """Cancel a swap request the user sent, while it is still open.
+
+    date: a date either shift of the request is on. request_id: the request's id
+    (from swap_requests); needed when several requests match the date.
+    confirm: false returns a preview and sends nothing; true cancels it.
+    """
+    return render.write(actions.cancel_swap(
+        session(), dates.parse_date(date) if date else None, request_id=request_id,
+        confirm=confirm), CONFIRM_HINT)
 
 
 def main(argv=None):

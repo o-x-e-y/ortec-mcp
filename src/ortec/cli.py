@@ -14,8 +14,10 @@ EPILOG = """\
 dates: YYYY-MM-DD, MM-DD or DD (the next such date), today/vandaag,
 tomorrow/morgen, or +N days. A time is 'DATE HH:MM'.
 
-Writes (swap-request, swap-accept, swap-decline, leave) only print the request
-they would send. Add --yes to send it.
+Writes (swap-request, swap-accept, swap-decline, swap-cancel, leave,
+leave-cancel, preference, preference-cancel) only print the request they would
+send. Add --yes to send it. Anything the app lets you take back can be cancelled
+here too, until a planner (or, for a swap, the colleague) has handled it.
 
 examples:
   ortec shifts                                  next two weeks
@@ -32,6 +34,12 @@ examples:
   ortec leave 2026-11-10                        one whole day
   ortec leave 2026-11-10 2026-11-12             three whole days
   ortec leave "2026-11-10 14:00" 18:00          part of a day
+  ortec swap-cancel 2026-10-28                  cancel the swap request you sent for that day
+  ortec leave-cancel 48897327                   cancel a pending leave request
+  ortec preference 2026-11-10 --off             rather not work that day
+  ortec preference "2026-11-10 16:00" 00:00 --off   ... from 16:00 to the end of the day
+  ortec preferences                             your work preferences, next 90 days
+  ortec preference-cancel 47968493              cancel a pending work preference
 
 setup: $ORTEC_COMPANY is the company code you enter in the ORTEC app (e.g.
 ACME1). Credentials: $ORTEC_USER (e-mail) and $ORTEC_PASS, or $ORTEC_USER_FILE
@@ -41,7 +49,8 @@ and $ORTEC_PASS_FILE. The session is kept in ~/.cache/ortec/session.json.
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="ortec", description="ORTEC Employee Self Service: shifts, swaps and leave.",
+        prog="ortec", description="ORTEC Employee Self Service: shifts, swaps, leave and "
+                                    "work preferences.",
         epilog=EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
 
@@ -62,6 +71,8 @@ def build_parser() -> argparse.ArgumentParser:
     span(command("swaps", "swap requests, incoming and outgoing"), actions.DEFAULT_DAYS["swaps"])
     span(command("leaves", "your leave requests"), actions.DEFAULT_DAYS["leaves"])
     command("leave-types", "the leave types you can request")
+    span(command("preferences", "your work preferences (werkvoorkeuren)"),
+         actions.DEFAULT_DAYS["preferences"])
 
     p = command("working-with", "who works with you, on days you work")
     span(p, actions.DEFAULT_DAYS["working-with"])
@@ -99,6 +110,33 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--type", dest="leave_type", help="leave type name or id (default: the first)")
     p.add_argument("-m", "--remark", default="")
     confirm(p)
+
+    p = command("leave-cancel", "cancel a leave request a planner has not handled yet")
+    p.add_argument("id", type=int, help="the request id, as leaves lists it")
+    confirm(p)
+
+    p = command("swap-cancel", "cancel a swap request you sent, while it is still open")
+    p.add_argument("date", nargs="?", help="a date either shift of the request is on")
+    p.add_argument("--id", type=int, help="the request id, if several match")
+    confirm(p)
+
+    p = command("preference","enter a work preference (werkvoorkeur): when you do or "
+                              "don't want to work")
+    p.add_argument("start", metavar="FROM", help="DATE, or 'DATE HH:MM' for part of a day")
+    p.add_argument("end", nargs="?", metavar="TO",
+                   help="last whole day, or 'DATE HH:MM' / HH:MM for part of a day "
+                        "(00:00 is the end of that day)")
+    want = p.add_mutually_exclusive_group(required=True)
+    want.add_argument("--off", dest="work", action="store_false",
+                      help="ik wil niet werken: you'd rather not work then")
+    want.add_argument("--work", dest="work", action="store_true",
+                      help="ik wil werken: you'd like to work then")
+    p.add_argument("-m", "--remark", default="")
+    confirm(p)
+
+    p = command("preference-cancel", "cancel a work preference a planner has not handled yet")
+    p.add_argument("id", type=int, help="its id, as preferences lists it")
+    confirm(p)
     return parser
 
 
@@ -129,6 +167,10 @@ def run(args, session: Session) -> str:
             return render.leaves(actions.leaves(session, start, end), start, end)
         case "leave-types":
             return render.leave_types(actions.leave_types(session))
+        case "preferences":
+            start, end = dates.span(args.start, args.end, args.days)
+            return render.work_preferences(actions.work_preferences(session, start, end),
+                                           start, end)
         case "working-with":
             start, end = dates.span(args.start, args.end, args.days, first=dates.tomorrow())
             found = actions.working_with(session, start, end)
@@ -156,6 +198,20 @@ def run(args, session: Session) -> str:
         case "leave":
             return render.write(actions.request_leave(
                 session, args.start, args.end, leave_type=args.leave_type, remark=args.remark,
+                confirm=args.yes), "run it again with --yes")
+        case "leave-cancel":
+            return render.write(actions.cancel_leave(session, args.id, confirm=args.yes),
+                                "run it again with --yes")
+        case "preference-cancel":
+            return render.write(actions.cancel_preference(session, args.id, confirm=args.yes),
+                                "run it again with --yes")
+        case "swap-cancel":
+            return render.write(actions.cancel_swap(
+                session, dates.parse_date(args.date) if args.date else None,
+                request_id=args.id, confirm=args.yes), "run it again with --yes")
+        case "preference":
+            return render.write(actions.request_work_preference(
+                session, args.start, args.end, work=args.work, remark=args.remark,
                 confirm=args.yes), "run it again with --yes")
 
 

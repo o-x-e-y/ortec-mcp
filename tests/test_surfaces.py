@@ -19,6 +19,14 @@ def test_cli_write_sends_with_yes(fake, capsys):
     assert fake.posts() == [("POST", "/api/requests/swaps/accept", {"id": 5001})]
 
 
+def test_cli_preference_needs_off_or_work(fake, capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["preference", "2026-12-25"], session=fake)
+    assert cli.main(["preference", "2026-12-25 00:00", "15:00", "--off"], session=fake) == 0
+    assert "Don't want to work: Fri 2026-12-25 00:00 – 15:00" in capsys.readouterr().out
+    assert fake.posts() == []
+
+
 def test_cli_errors_go_to_stderr(fake, capsys):
     assert cli.main(["swap-request", "2026-10-28", "zed"], session=fake) == 1
     assert "no colleague matching 'zed'" in capsys.readouterr().err
@@ -58,7 +66,8 @@ def test_mcp_errors_reach_the_model(tools):
 def test_mcp_write_tools_are_marked_destructive():
     tools = {t.name: t for t in asyncio.run(server.server.list_tools())}
     writes = {name for name, t in tools.items() if not t.annotations.read_only_hint}
-    assert writes == {"request_swap", "respond_to_swap", "request_leave"}
+    assert writes == {"request_swap", "respond_to_swap", "cancel_swap", "request_leave",
+                      "cancel_leave", "request_work_preference", "cancel_work_preference"}
     assert all(tools[name].annotations.destructive_hint for name in writes)
 
 

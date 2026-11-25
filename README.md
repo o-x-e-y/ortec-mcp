@@ -1,7 +1,7 @@
 # ortec
 
 A CLI and an MCP server for ORTEC Employee Self Service
-(`workforce-ess.ortecapps.com`): your shifts, shift swaps and time off, without
+(`workforce-ess.ortecapps.com`): your shifts, shift swaps, time off and work preferences, without
 the web app.
 
 ```sh
@@ -11,6 +11,8 @@ ortec swap-candidates 2026-10-28          # who can swap my shift that day
 ortec swap-request 2026-10-28 tess        # preview; add --yes to send
 ortec swap-accept 2026-10-28              # preview; add --yes to send
 ortec leave 2026-11-10 2026-11-12         # preview; add --yes to send
+ortec preference 2026-11-10 --off         # werkvoorkeur: rather not work; preview
+ortec leave-cancel 48897327               # take it back while pending; preview
 ortec working-with                        # who you work with on your shifts, 7 days from tomorrow
 ```
 
@@ -18,10 +20,15 @@ ortec working-with                        # who you work with on your shifts, 7 
 
 ## Writes are previews until confirmed
 
-`swap-request`, `swap-accept`, `swap-decline` and `leave` print the request
-they would send and stop. `--yes` (CLI) or `confirm: true` (MCP) sends it. A
+Every write (`swap-request`, `swap-accept`, `swap-decline`, `swap-cancel`, `leave`,
+`leave-cancel`, `preference`, `preference-cancel`) prints the request it would
+send and stops. `--yes` (CLI) or `confirm: true` (MCP) sends it. A
 confirmed leave request runs the server's balance check first and stops if it
 fails, as the web app does.
+
+Whatever the web app lets you take back can be cancelled the same way: a swap
+request you sent while it is Open, a leave request or work preference while it
+is Pending. Once a colleague or planner has handled it, the cancel is refused.
 
 ## Login
 
@@ -53,7 +60,8 @@ saying so.
 
 `ortec-mcp` exposes the same operations as tools: `shifts`, `swap_requests`,
 `swap_candidates`, `working_with`, `request_swap`, `respond_to_swap`, `leave_types`,
-`leave_requests`, `request_leave`. The three writes are annotated destructive
+`cancel_swap`, `leave_requests`, `request_leave`, `cancel_leave`, `work_preferences`,
+`request_work_preference`, `cancel_work_preference`. The writes are annotated destructive
 and default to a preview.
 
 ```sh

@@ -14,7 +14,7 @@ from . import dates, render
 from .errors import OrtecError
 from .session import Session
 
-DEFAULT_DAYS = {"shifts": 13, "swaps": 30, "leaves": 90, "working-with": 6}
+DEFAULT_DAYS = {"shifts": 13, "swaps": 30, "leaves": 90, "preferences": 90, "working-with": 6}
 
 
 @dataclass(frozen=True)
@@ -261,26 +261,7 @@ def request_swap(s: Session, day: dt.date, colleague: str, *, shift: str | None 
 
 def respond_swap(s: Session, day: dt.date | None = None, *, request_id: int | None = None,
                  decline: bool = False, confirm: bool = False) -> Write:
-    if day is None and request_id is None:
-        raise OrtecError("give a date, a request id, or both")
-    if day:
-        found = [r for r in swap_requests(s, day) if r.touches(day)]
-    else:
-        today = dates.today()
-        found = swap_requests(s, today - dt.timedelta(days=7), today + dt.timedelta(days=92))
-    if request_id is not None:
-        found = [r for r in found if r.id == request_id]
-    open_incoming = [r for r in found if r.incoming and r.status == "Open"]
-    if not open_incoming:
-        where = f"on {day.isoformat()}" if day else f"with id {request_id}"
-        others = "".join(f"\n  - {render.request_line(r)}" for r in found)
-        raise OrtecError(f"no open incoming swap request {where}"
-                         + (f"; found only:{others}" if others else ""))
-    if len(open_incoming) > 1:
-        options = "\n".join(f"  - {render.request_line(r)}" for r in open_incoming)
-        raise OrtecError(f"several open requests match; pick one by id:\n{options}")
-    request = open_incoming[0]
-
+    request = _open_request(s, day, request_id, incoming=True)
     verb = "Decline" if decline else "Accept"
     summary = [f"{verb} swap request {request.id} from {request.requester.name}"]
     if request.offered:
@@ -343,8 +324,8 @@ def leave_period(start: str, end: str | None = None, *,
     if last == first and end_time <= start_time:
         finish = dates.at(first + dt.timedelta(days=1), end_time)
     if not begin < finish <= begin + dt.timedelta(days=1):
-        raise OrtecError("part-of-day leave must end within 24 hours of its start; "
-                         "use whole dates for leave over several days")
+        raise OrtecError("part of a day must end within 24 hours of its start; "
+                         "use whole dates for several days")
     return begin, finish, "PartOfADay"
 
 
@@ -378,9 +359,101 @@ def request_leave(s: Session, start: str, end: str | None = None, *, leave_type:
     return _send(s, write, confirm)
 
 
+def cancel_leave(s: Session, leave_id: int, *, confirm: bool = False) -> Write:
+    leave = _pending(leaves, s, leave_id, "leave request")
+    begin = dt.datetime.fromisoformat(leave["fromDateTime"])
+    finish = dt.datetime.fromisoformat(leave["toDateTime"])
+    summary = [(f"Cancel leave request {leave_id}: {leave['leaveTypeName']}, "
+                f"{render.period_line(begin, finish, leave['duration'])}")]
+    path = f"/api/v2/employees/{s.employee_id}/requests/leaves/{leave_id}"
+    return _send(s, Write(summary, "DELETE", path, {}), confirm)
+
+
+def cancel_preference(s: Session, preference_id: int, *, confirm: bool = False) -> Write:
+    p = _pending(work_preferences, s, preference_id, "work preference")
+    summary = [f"Cancel work preference {preference_id}: {render.preference_line(p)}"]
+    path = f"/api/v2/employees/{s.employee_id}/requests/work-preferences/{preference_id}"
+    return _send(s, Write(summary, "DELETE", path, {}), confirm)
+
+
+def cancel_swap(s: Session, day: dt.date | None = None, *, request_id: int | None = None,
+                confirm: bool = False) -> Write:
+    request = _open_request(s, day, request_id, incoming=False)
+    summary = [f"Cancel swap request {request.id} to {request.colleague.name}"]
+    if request.offered:
+        summary.append(f"You keep: {render.shift_line(request.offered)}")
+    if request.wanted:
+        summary.append(f"You no longer ask for: {render.shift_line(request.wanted)}")
+    return _send(s, Write(summary, "DELETE", f"/api/requests/swaps/{request.id}", {}), confirm)
+
+
+def _pending(listing, s: Session, wanted: int, what: str) -> dict:
+    """The web app lets the user delete a leave request or work preference only
+    while a planner has not handled it yet."""
+    today = dates.today()
+    found = [r for r in listing(s, today - dt.timedelta(days=31), today + dt.timedelta(days=366))
+             if r["id"] == wanted]
+    if not found:
+        raise OrtecError(f"no {what} {wanted} from a month ago to a year ahead")
+    if found[0]["_status"] != "Pending":
+        raise OrtecError(f"{what} {wanted} is {found[0]['_status']}; only a pending one "
+                         "can be cancelled")
+    return found[0]
+
+
+def _open_request(s: Session, day: dt.date | None, request_id: int | None, *,
+                  incoming: bool) -> SwapRequest:
+    """The one Open swap request matching the date and/or id: received to answer
+    it, sent to cancel it, as the web app allows."""
+    if day is None and request_id is None:
+        raise OrtecError("give a date, a request id, or both")
+    if day:
+        found = [r for r in swap_requests(s, day) if r.touches(day)]
+    else:
+        today = dates.today()
+        found = swap_requests(s, today - dt.timedelta(days=7), today + dt.timedelta(days=92))
+    if request_id is not None:
+        found = [r for r in found if r.id == request_id]
+    matches = [r for r in found if r.incoming == incoming and r.status == "Open"]
+    if not matches:
+        where = f"on {day.isoformat()}" if day else f"with id {request_id}"
+        direction = "incoming" if incoming else "outgoing"
+        others = "".join(f"\n  - {render.request_line(r)}" for r in found)
+        raise OrtecError(f"no open {direction} swap request {where}"
+                         + (f"; found only:{others}" if others else ""))
+    if len(matches) > 1:
+        options = "\n".join(f"  - {render.request_line(r)}" for r in matches)
+        raise OrtecError(f"several open requests match; pick one by id:\n{options}")
+    return matches[0]
+
+
+def work_preferences(s: Session, start: dt.date, end: dt.date | None = None) -> list[dict]:
+    end = end or start
+    raw = s.get(f"/api/v2/employees/{s.employee_id}/requests/work-preferences",
+                **{"from": dates.at(start).isoformat(),
+                   "until": dates.at(end + dt.timedelta(days=1)).isoformat()})
+    return sorted(raw["workPreferences"], key=lambda r: r["fromDateTime"])
+
+
+def request_work_preference(s: Session, start: str, end: str | None = None, *, work: bool,
+                            remark: str = "", confirm: bool = False) -> Write:
+    """A one-off "Tijdsduur" preference: the app's "Nieuwe werkvoorkeur" form."""
+    begin, finish, duration = leave_period(start, end)
+    body = {"employeeId": s.employee_id, "type": "Interval",
+            "fromDateTime": begin.isoformat(), "toDateTime": finish.isoformat(),
+            "remarks": remark, "isWorkPreference": work}
+    summary = [f"{render.preference_kind(work)}: {render.period_line(begin, finish, duration)}"]
+    if remark:
+        summary.append(f"Remark: {remark}")
+    write = _send(s, Write(summary, "POST", "/api/v2/requests/work-preferences", body), confirm)
+    if write.sent and isinstance(write.result, dict) and "id" in write.result:
+        write.after = [f"Preference {write.result['id']} is {write.result.get('_status', '?')}."]
+    return write
+
+
 def _send(s: Session, write: Write, confirm: bool) -> Write:
     if confirm:
-        write.result = s.request(write.method, write.path, json=write.body)
+        write.result = s.request(write.method, write.path, json=write.body or None)
         write.sent = True
     return write
 

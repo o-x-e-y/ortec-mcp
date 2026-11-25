@@ -25,6 +25,8 @@ def period_line(begin: dt.datetime, finish: dt.datetime, duration: str) -> str:
     if duration == "PartOfADay" or begin.time() != dt.time() or finish.time() != dt.time():
         if finish.date() == begin.date():
             return f"{begin:%a %Y-%m-%d %H:%M} – {finish:%H:%M}"
+        if finish.time() == dt.time() and finish.date() == begin.date() + dt.timedelta(days=1):
+            return f"{begin:%a %Y-%m-%d %H:%M} – 24:00"
         return f"{begin:%a %Y-%m-%d %H:%M} – {finish:%a %Y-%m-%d %H:%M}"
     if duration == "OneFullDay":
         return f"{begin:%a %Y-%m-%d}, whole day"
@@ -98,10 +100,38 @@ def leaves(found, start: dt.date, end: dt.date) -> str:
     return "\n".join(out)
 
 
+def preference_kind(work: bool) -> str:
+    return "Want to work" if work else "Don't want to work"
+
+
+def preference_line(p) -> str:
+    begin = dt.datetime.fromisoformat(p["fromDateTime"])
+    finish = dt.datetime.fromisoformat(p["toDateTime"])
+    days = "OneFullDay" if finish - begin == dt.timedelta(days=1) else "MultipleDays"
+    shift = f" ({p['shiftName']})" if p.get("shiftName") else ""
+    return f"{preference_kind(p['isWorkPreference'])}: {period_line(begin, finish, days)}{shift}"
+
+
+def work_preferences(found, start: dt.date, end: dt.date) -> str:
+    title = f"# Work preferences, {span(start, end)}"
+    if not found:
+        return f"{title}\n\nNone."
+    out = [title, ""]
+    for p in found:
+        out.append(f"- **{p['id']}** {preference_line(p)} — {p['_status']}")
+        if p.get("_declineReason"):
+            out.append(f"  - reason: {p['_declineReason']}")
+        if p.get("remarks"):
+            out.append(f"  - remark: {p['remarks']}")
+    return "\n".join(out)
+
+
 def write(w, confirm_hint: str) -> str:
     out = [("# Sent" if w.sent else "# Not sent — preview"), ""]
     out += [f"- {line}" for line in w.summary]
-    out += ["", f"`{w.method} {w.path}`", "", "```json", json.dumps(w.body, indent=2), "```"]
+    out += ["", f"`{w.method} {w.path}`"]
+    if w.body:
+        out += ["", "```json", json.dumps(w.body, indent=2), "```"]
     if w.sent:
         out += [""] + w.after
         if isinstance(w.result, dict) and "Status" in w.result:

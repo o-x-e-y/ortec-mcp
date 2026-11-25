@@ -93,6 +93,29 @@ SWAP_CANDIDATES = [
 REASSIGNMENT = [{"Name": "Reassignment", "IsReassignment": True,
                  "Employees": [{**DIRK, "ShiftId": None}, {**CARL, "ShiftId": None}]}]
 
+def leave(id_, status, begin, end, duration):
+    return {"id": id_, "employeeId": ME, "leaveTypeId": 8, "fromDateTime": begin,
+            "toDateTime": end, "duration": duration, "remarks": "", "_declineReason": "",
+            "_status": status}
+
+
+LEAVES = {"leaveRequests": [
+    leave(6001, "Pending", "2026-12-25T00:00:00+01:00", "2026-12-25T15:00:00+01:00",
+          "PartOfADay"),
+    leave(6002, "Approved", "2026-11-10T00:00:00+01:00", "2026-11-11T00:00:00+01:00",
+          "OneFullDay"),
+]}
+
+WORK_PREFERENCES = {"workPreferences": [
+    {"id": 7002, "employeeId": ME, "type": "Interval", "shiftName": "",
+     "fromDateTime": "2026-11-20T16:00:00+01:00", "toDateTime": "2026-11-21T00:00:00+01:00",
+     "isWorkPreference": True, "remarks": "", "_declineReason": "", "_status": "Pending"},
+    {"id": 7001, "employeeId": ME, "type": "Interval", "shiftName": "",
+     "fromDateTime": "2026-11-01T00:00:00+01:00", "toDateTime": "2026-11-02T00:00:00+01:00",
+     "isWorkPreference": False, "remarks": "marathon", "_declineReason": "",
+     "_status": "Approved"},
+]}
+
 LEAVE_TYPES = {"leaveTypes": [{"id": 8, "name": "Vakantie"},
                               {"id": 13, "name": "Verlof tijdens ziekte"}]}
 
@@ -129,6 +152,16 @@ class FakeSession:
                 return LEAVE_TYPES
             case "POST", "/api/v2/requests/leaves/check-balance":
                 return {"isOk": self.balance_ok, "details": "" if self.balance_ok else "op"}
+            case "GET", "/api/v2/employees/100/requests/leaves":
+                return LEAVES
+            case "DELETE", ("/api/v2/employees/100/requests/leaves/6001"
+                            | "/api/v2/employees/100/requests/work-preferences/7002"
+                            | "/api/requests/swaps/5002"):
+                return None
+            case "GET", "/api/v2/employees/100/requests/work-preferences":
+                return WORK_PREFERENCES
+            case "POST", "/api/v2/requests/work-preferences":
+                return {**json, "id": 7003, "_declineReason": "", "_status": "Pending"}
             case "POST", "/api/requests/swaps":
                 return {"Id": 9999, "Status": "Open"}
             case "POST", ("/api/requests/swaps/accept" | "/api/requests/swaps/decline"
